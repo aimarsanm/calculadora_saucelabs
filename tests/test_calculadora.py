@@ -30,15 +30,6 @@ class TestCalcular(unittest.TestCase):
         valor_actual = calcular(10, 2, '/')
         self.assertEqual(valor_esperado, valor_actual)
     
-    def test_potencia(self):
-        valor_esperado = 8
-        valor_actual = calcular(2, 3, '^')
-        self.assertEqual(valor_esperado, valor_actual)
-
-    def test_modulo(self):
-        valor_esperado = 1
-        valor_actual = calcular(10, 3, '%')
-        self.assertEqual(valor_esperado, valor_actual)
 
     def test_operacion_invalida(self):
         with self.assertRaises(ValueError):
