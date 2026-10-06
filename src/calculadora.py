@@ -30,7 +30,7 @@ if __name__ == '__main__':
     print("Ingrese el número 2")
     numero2 = int(input())
     
-    print("Ingrese la operación (+, -, *, /, **)")
+    print("Ingrese la operación (+, -, *, /, **, //)")
     operacion = input()
 
     resultado = calcular(numero1, numero2, operacion)
