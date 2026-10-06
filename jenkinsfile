@@ -206,38 +206,27 @@ pipeline {
                             -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
                             -v "${WORKSPACE}:/workspace" \
                             "${IMAGE_PYTHON}" \
-                            python3 -c "
-import os, urllib.request, json
-
+                            python3 -c "import os, urllib.request, json
 sonar_url = os.environ['SONAR_ENTERPRISE_URL']
 token = os.environ['SONAR_TOKEN']
 project = os.environ['PROJECT_KEY']
 pr = os.environ['GITLAB_MERGE_REQUEST_IID']
-
 headers = {'Authorization': 'Bearer ' + token}
 
-# 1. Quality Gate
 qg_url = f'{sonar_url}/api/qualitygates/project_status?projectKey={project}&pullRequest={pr}'
 req = urllib.request.Request(qg_url, headers=headers)
 with urllib.request.urlopen(req) as resp:
     qg_data = json.loads(resp.read().decode())
 
 status = qg_data.get('projectStatus', {}).get('status', 'UNKNOWN')
-if status == 'OK':
-    gate_header = 'Quality Gate passed'
-elif status == 'WARN':
-    gate_header = 'Quality Gate passed with warnings'
-else:
-    gate_header = 'Quality Gate failed'
+gate_header = 'Quality Gate passed' if status == 'OK' else ('Quality Gate passed with warnings' if status == 'WARN' else 'Quality Gate failed')
 
-# 2. Detailed Metrics
 metrics_url = f'{sonar_url}/api/measures/component?component={project}&pullRequest={pr}&metricKeys=new_violations,new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_security_hotspots'
 req_m = urllib.request.Request(metrics_url, headers=headers)
 with urllib.request.urlopen(req_m) as resp:
     metrics_data = json.loads(resp.read().decode())
 
 measures = metrics_data.get('component', {}).get('measures', [])
-
 def get_metric(key, fallback):
     for m in measures:
         if m.get('metric') == key:
@@ -300,34 +289,40 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
                                 -e SONAR_ENTERPRISE_URL="${SONAR_ENTERPRISE_URL}" \
                                 -e PROJECT_KEY="${PROJECT_KEY}" \
                                 "${IMAGE_PYTHON}" \
-                                python3 -c "
-import os, urllib.request, json
-
+                                python3 -c "import os, urllib.request, json
 project_id = os.environ.get('GITLAB_PROJECT_ID')
 mr_iid = os.environ.get('GITLAB_MERGE_REQUEST_IID')
 gitlab_url = os.environ.get('GITLAB_API_URL')
 token = os.environ.get('GITLAB_TOKEN')
 
-comment_body = f'''### {os.environ.get('GATE_HEADER')}
+comment_body = '''### {gate_header}
 
 | Metric | Value |
 | :--- | :--- |
-| New Issues | {os.environ.get('M_NEW_ISSUES')} |
-| New Bugs | {os.environ.get('M_NEW_BUGS')} |
-| New Vulnerabilities | {os.environ.get('M_NEW_VULNERABILITIES')} |
-| New Code Smells | {os.environ.get('M_NEW_CODE_SMELLS')} |
-| Coverage | {os.environ.get('M_COVERAGE')} |
-| Duplications | {os.environ.get('M_DUPLICATIONS')} |
-| Security Hotspots | {os.environ.get('M_SECURITY_HOTSPOTS')} |
+| New Issues | {issues} |
+| New Bugs | {bugs} |
+| New Vulnerabilities | {vulns} |
+| New Code Smells | {smells} |
+| Coverage | {cov} |
+| Duplications | {dups} |
+| Security Hotspots | {hotspots} |
 
-[View SonarQube analysis]({os.environ.get('SONAR_ENTERPRISE_URL')}/dashboard?id={os.environ.get('PROJECT_KEY')}&pullRequest={mr_iid})'''
+[View SonarQube analysis]({sonar_url}/dashboard?id={project_key}&pullRequest={mr_iid})'''.format(
+    gate_header=os.environ.get('GATE_HEADER'),
+    issues=os.environ.get('M_NEW_ISSUES'),
+    bugs=os.environ.get('M_NEW_BUGS'),
+    vulns=os.environ.get('M_NEW_VULNERABILITIES'),
+    smells=os.environ.get('M_NEW_CODE_SMELLS'),
+    cov=os.environ.get('M_COVERAGE'),
+    dups=os.environ.get('M_DUPLICATIONS'),
+    hotspots=os.environ.get('M_SECURITY_HOTSPOTS'),
+    sonar_url=os.environ.get('SONAR_ENTERPRISE_URL'),
+    project_key=os.environ.get('PROJECT_KEY'),
+    mr_iid=mr_iid
+)
 
 url = f'{gitlab_url}/projects/{project_id}/merge_requests/{mr_iid}/notes'
-headers = {
-    'PRIVATE-TOKEN': token,
-    'Content-Type': 'application/json'
-}
-
+headers = {'PRIVATE-TOKEN': token, 'Content-Type': 'application/json'}
 data = json.dumps({'body': comment_body}).encode('utf-8')
 req = urllib.request.Request(url, data=data, headers=headers, method='POST')
 with urllib.request.urlopen(req) as resp:
