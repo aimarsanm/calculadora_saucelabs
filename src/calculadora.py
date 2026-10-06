@@ -26,7 +26,12 @@ def calcular(numero1, numero2, operacion):
         case '√':
             # Operación raíz cuadrada
             respuesta = numero1 ** 0.5
-
+        case 'c':
+            # Operación cubo
+            respuesta = numero1 ** 3
+        case '√3':
+            # Operación raíz cúbica
+            respuesta = numero1 ** (1/3)
         case _:
             raise ValueError("Operación inválida.")
 
