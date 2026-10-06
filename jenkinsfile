@@ -28,7 +28,7 @@ pipeline {
         GITLAB_API_URL = 'https://gitlab.devops.lksnext.com/api/v4'
         SONAR_TOKEN = credentials('sonarenterprise-analysis-token')
         GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: ''}"
-    }
+    }   
 
     stages {
         stage('Git Checkout') {
