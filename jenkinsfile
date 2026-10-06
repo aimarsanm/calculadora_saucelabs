@@ -31,6 +31,7 @@ pipeline {
         GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: env.GITLAB_MERGE_REQUEST_IID ?: ''}"
         GITLAB_SOURCE_BRANCH = "${env.gitlabSourceBranch ?: env.GITLAB_SOURCE_BRANCH ?: ''}"
         GITLAB_TARGET_BRANCH = "${env.gitlabTargetBranch ?: env.GITLAB_TARGET_BRANCH ?: ''}"
+        GITLAB_PROJECT_ID = "${env.gitlabMergeRequestProjectId ?: env.GITLAB_PROJECT_ID ?: env.CI_PROJECT_ID ?: ''}"
     }   
 
     stages {
@@ -294,7 +295,8 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
                                 -e SONAR_ENTERPRISE_URL="${SONAR_ENTERPRISE_URL}" \
                                 -e PROJECT_KEY="${PROJECT_KEY}" \
                                 "${IMAGE_PYTHON}" \
-                                python3 -c "import os, urllib.request, json
+                                python3 -c "$(cat <<'PY'
+import os, urllib.request, json
 project_id = os.environ.get('GITLAB_PROJECT_ID')
 mr_iid = os.environ.get('GITLAB_MERGE_REQUEST_IID')
 gitlab_url = os.environ.get('GITLAB_API_URL')
@@ -332,7 +334,8 @@ data = json.dumps({'body': comment_body}).encode('utf-8')
 req = urllib.request.Request(url, data=data, headers=headers, method='POST')
 with urllib.request.urlopen(req) as resp:
     print('Comentario enviado correctamente a GitLab.')
-"
+PY
+)"
                         '''
                     }
                 }
