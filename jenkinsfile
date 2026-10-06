@@ -32,7 +32,7 @@ pipeline {
         GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: env.GITLAB_MERGE_REQUEST_IID ?: ''}"
         GITLAB_SOURCE_BRANCH = "${env.gitlabSourceBranch ?: env.GITLAB_SOURCE_BRANCH ?: ''}"
         GITLAB_TARGET_BRANCH = "${env.gitlabTargetBranch ?: env.GITLAB_TARGET_BRANCH ?: ''}"
-        GITLAB_PROJECT_ID = "${env.gitlabMergeRequestProjectId ?: env.GITLAB_PROJECT_ID ?: env.CI_PROJECT_ID ?: ''}"
+        GITLAB_PROJECT_ID = "${env.gitlabMergeRequestTargetProjectId ?: env.gitlabMergeRequestProjectId ?: env.GITLAB_PROJECT_ID ?: env.CI_PROJECT_ID ?: ''}"
     }   
 
     stages {
