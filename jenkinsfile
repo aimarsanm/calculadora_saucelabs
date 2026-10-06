@@ -255,8 +255,13 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
                     '''
 
                     def envFile = readFile("${WORKSPACE}/sonar_metrics.env")
-                    envFile.splitEachLine('=') { k, v ->
-                        if (k && v) env."${k}" = v
+                    for (String line : envFile.readLines()) {
+                        int separator = line.indexOf('=')
+                        if (separator > 0) {
+                            String key = line.substring(0, separator)
+                            String value = line.substring(separator + 1)
+                            if (value) env."${key}" = value
+                        }
                     }
                 }
             }
