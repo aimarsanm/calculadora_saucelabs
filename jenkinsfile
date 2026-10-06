@@ -204,7 +204,7 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def qgJson = readJSON text: qgRaw
+                    def qgJson = new groovy.json.JsonSlurperClassic().parseText(qgRaw)
                     def status = qgJson?.projectStatus?.status ?: 'UNKNOWN'
 
                     if (status == 'OK') {
