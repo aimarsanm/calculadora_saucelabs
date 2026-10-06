@@ -204,6 +204,7 @@ pipeline {
                             -e SONAR_ENTERPRISE_URL="${SONAR_ENTERPRISE_URL}" \
                             -e PROJECT_KEY="${PROJECT_KEY}" \
                             -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
+                            -v "${WORKSPACE}:/workspace" \
                             "${IMAGE_PYTHON}" \
                             python3 -c "
 import os, urllib.request, json
@@ -258,14 +259,13 @@ env_vars = {
     'M_DUPLICATIONS': get_metric('new_duplicated_lines_density', '-')
 }
 
-with open('/tmp/sonar_metrics.env', 'w') as f:
+with open('/workspace/sonar_metrics.env', 'w') as f:
     for k, v in env_vars.items():
         f.write(f'{k}={v}\\n')
 "
                     '''
 
-                    // Cargar las variables obtenidas por Python al entorno de Jenkins
-                    def envFile = readFile('/tmp/sonar_metrics.env')
+                    def envFile = readFile("${WORKSPACE}/sonar_metrics.env")
                     envFile.splitEachLine('=') { k, v ->
                         if (k && v) env."${k}" = v
                     }
