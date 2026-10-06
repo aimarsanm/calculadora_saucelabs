@@ -27,7 +27,10 @@ pipeline {
         SONAR_ENTERPRISE_URL = 'https://sonarqubeenterprise.devops.lksnext.com'
         GITLAB_API_URL = 'https://gitlab.devops.lksnext.com/api/v4'
         SONAR_TOKEN = credentials('sonarenterprise-analysis-token')
-        GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: ''}"
+        
+        GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: env.GITLAB_MERGE_REQUEST_IID ?: ''}"
+        GITLAB_SOURCE_BRANCH = "${env.gitlabSourceBranch ?: env.GITLAB_SOURCE_BRANCH ?: ''}"
+        GITLAB_TARGET_BRANCH = "${env.gitlabTargetBranch ?: env.GITLAB_TARGET_BRANCH ?: ''}"
     }   
 
     stages {
@@ -124,9 +127,9 @@ pipeline {
                             -e PROJECT_NAME="${PROJECT_NAME}" \
                             -e PROJECT_VERSION="${PROJECT_VERSION}" \
                             -e PYTHON_VERSION="${PYTHON_VERSION}" \
-                            -e GITLAB_MERGE_REQUEST_IID="${env.GITLAB_MERGE_REQUEST_IID:-}" \
-                            -e GITLAB_SOURCE_BRANCH="${env.GITLAB_SOURCE_BRANCH:-}" \
-                            -e GITLAB_TARGET_BRANCH="${env.GITLAB_TARGET_BRANCH:-}" \
+                            -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
+                            -e GITLAB_SOURCE_BRANCH="${GITLAB_SOURCE_BRANCH}" \
+                            -e GITLAB_TARGET_BRANCH="${GITLAB_TARGET_BRANCH}" \
                             "${IMAGE_SONARSCANNER}" \
                             -ceu '
                                 if command -v apk >/dev/null 2>&1; then
