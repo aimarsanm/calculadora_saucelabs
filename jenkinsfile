@@ -196,10 +196,10 @@ pipeline {
             steps {
                 script {
                     def qgRaw = sh(
-                        script: """
+                        script: '''
                             curl -fsS -u "${env.SONAR_TOKEN}:" \\
                             "${env.SONAR_ENTERPRISE_URL}/api/qualitygates/project_status?projectKey=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID}"
-                        """,
+                        ''',
                         returnStdout: true
                     ).trim()
 
