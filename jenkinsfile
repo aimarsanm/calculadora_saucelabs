@@ -221,7 +221,7 @@ with urllib.request.urlopen(req) as resp:
     qg_data = json.loads(resp.read().decode())
 
 status = qg_data.get('projectStatus', {}).get('status', 'UNKNOWN')
-gate_header = 'Quality Gate passed' if status == 'OK' else ('Quality Gate passed with warnings' if status == 'WARN' else 'Quality Gate failed')
+gate_header = ' ✅ Quality Gate passed' if status == 'OK' else ('⚠️ Quality Gate passed with warnings' if status == 'WARN' else '❌ Quality Gate failed')
 
 metrics_url = f'{sonar_url}/api/measures/component?component={project}&pullRequest={pr}&metricKeys=new_violations,new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_security_hotspots'
 req_m = urllib.request.Request(metrics_url, headers=headers)
@@ -315,13 +315,13 @@ comment_body = """### {gate_header}
 
 | Metric | Value |
 | :--- | :--- |
-| New Issues | {issues} |
-| New Bugs | {bugs} |
-| New Vulnerabilities | {vulns} |
-| New Code Smells | {smells} |
-| Coverage | {cov} |
-| Duplications | {dups} |
-| Security Hotspots | {hotspots} |
+| ⚠️ New Issues | {issues} |
+| 🐞 New Bugs | {bugs} |
+| 🔓 New Vulnerabilities | {vulns} |
+| ☣️ New Code Smells | {smells} |
+| 📊 Coverage | {cov} |
+| 🔁Duplications | {dups} |
+| 🔒 Security Hotspots | {hotspots} |
 
 [View SonarQube analysis]({sonar_url}/dashboard?id={project_key}&pullRequest={mr_iid})""".format(
     gate_header=os.environ.get('GATE_HEADER'),
