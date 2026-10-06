@@ -196,54 +196,79 @@ pipeline {
 
             steps {
                 script {
-                    // 1. Fetch Quality Gate Status usando comillas simples para ocultar el secreto
-                    def qgRaw = sh(
-                        script: '''
-                            curl -fsS -u "${SONAR_TOKEN}:" \
-                            "${SONAR_ENTERPRISE_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}&pullRequest=${GITLAB_MERGE_REQUEST_IID}"
-                        ''',
-                        returnStdout: true
-                    ).trim()
+                    sh '''
+                        set -eu
 
-                    def qgJson = new groovy.json.JsonSlurperClassic().parseText(qgRaw)
-                    def status = qgJson?.projectStatus?.status ?: 'UNKNOWN'
+                        docker run --rm \
+                            -e SONAR_TOKEN="${SONAR_TOKEN}" \
+                            -e SONAR_ENTERPRISE_URL="${SONAR_ENTERPRISE_URL}" \
+                            -e PROJECT_KEY="${PROJECT_KEY}" \
+                            -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
+                            "${IMAGE_PYTHON}" \
+                            python3 -c "
+import os, urllib.request, json
 
-                    if (status == 'OK') {
-                        env.GATE_HEADER = 'Quality Gate passed'
-                    } else if (status == 'WARN') {
-                        env.GATE_HEADER = 'Quality Gate passed with warnings'
-                    } else {
-                        env.GATE_HEADER = 'Quality Gate failed'
+sonar_url = os.environ['SONAR_ENTERPRISE_URL']
+token = os.environ['SONAR_TOKEN']
+project = os.environ['PROJECT_KEY']
+pr = os.environ['GITLAB_MERGE_REQUEST_IID']
+
+headers = {'Authorization': 'Bearer ' + token}
+
+# 1. Quality Gate
+qg_url = f'{sonar_url}/api/qualitygates/project_status?projectKey={project}&pullRequest={pr}'
+req = urllib.request.Request(qg_url, headers=headers)
+with urllib.request.urlopen(req) as resp:
+    qg_data = json.loads(resp.read().decode())
+
+status = qg_data.get('projectStatus', {}).get('status', 'UNKNOWN')
+if status == 'OK':
+    gate_header = 'Quality Gate passed'
+elif status == 'WARN':
+    gate_header = 'Quality Gate passed with warnings'
+else:
+    gate_header = 'Quality Gate failed'
+
+# 2. Detailed Metrics
+metrics_url = f'{sonar_url}/api/measures/component?component={project}&pullRequest={pr}&metricKeys=new_violations,new_bugs,new_vulnerabilities,new_code_smells,new_coverage,new_duplicated_lines_density,new_security_hotspots'
+req_m = urllib.request.Request(metrics_url, headers=headers)
+with urllib.request.urlopen(req_m) as resp:
+    metrics_data = json.loads(resp.read().decode())
+
+measures = metrics_data.get('component', {}).get('measures', [])
+
+def get_metric(key, fallback):
+    for m in measures:
+        if m.get('metric') == key:
+            if 'period' in m and 'value' in m['period']:
+                return m['period']['value']
+            if 'periods' in m and len(m['periods']) > 0:
+                return m['periods'][0].get('value', fallback)
+            return m.get('value', fallback)
+    return fallback
+
+env_vars = {
+    'GATE_HEADER': gate_header,
+    'M_NEW_ISSUES': get_metric('new_violations', '0'),
+    'M_NEW_BUGS': get_metric('new_bugs', '0'),
+    'M_NEW_VULNERABILITIES': get_metric('new_vulnerabilities', '0'),
+    'M_NEW_CODE_SMELLS': get_metric('new_code_smells', '0'),
+    'M_SECURITY_HOTSPOTS': get_metric('new_security_hotspots', '0'),
+    'M_COVERAGE': get_metric('new_coverage', 'N/A'),
+    'M_DUPLICATIONS': get_metric('new_duplicated_lines_density', '-')
+}
+
+with open('/tmp/sonar_metrics.env', 'w') as f:
+    for k, v in env_vars.items():
+        f.write(f'{k}={v}\\n')
+"
+                    '''
+
+                    // Cargar las variables obtenidas por Python al entorno de Jenkins
+                    def envFile = readFile('/tmp/sonar_metrics.env')
+                    envFile.splitEachLine('=') { k, v ->
+                        if (k && v) env."${k}" = v
                     }
-
-                    // 2. Fetch Detailed Metrics
-                    def metricsRaw = sh(
-                        script: '''
-                            curl -fsS -u "${SONAR_TOKEN}:" \
-                            "${SONAR_ENTERPRISE_URL}/api/measures/component?component=${PROJECT_KEY}&pullRequest=${GITLAB_MERGE_REQUEST_IID}&metricKeys=new_violations,new_bugs,new_reliability_rating,new_vulnerabilities,new_security_rating,new_code_smells,new_maintainability_rating,new_coverage,new_duplicated_lines_density,new_security_hotspots"
-                        ''',
-                        returnStdout: true
-                    ).trim()
-
-                    // Corrección: Usar JsonSlurperClassic en lugar de readJSON
-                    def metricsJson = new groovy.json.JsonSlurperClassic().parseText(metricsRaw)
-                    def measures = metricsJson?.component?.measures ?: []
-
-                    def getMetric = { key, fallback ->
-                        def item = measures.find { it.metric == key }
-                        return item?.period?.value ?: item?.periods?.getAt(0)?.value ?: item?.value ?: fallback
-                    }
-
-                    env.M_NEW_ISSUES = getMetric('new_violations', '0')
-                    env.M_NEW_BUGS = getMetric('new_bugs', '0')
-                    env.M_NEW_VULNERABILITIES = getMetric('new_vulnerabilities', '0')
-                    env.M_NEW_CODE_SMELLS = getMetric('new_code_smells', '0')
-                    env.M_SECURITY_HOTSPOTS = getMetric('new_security_hotspots', '0')
-                    env.M_COVERAGE = getMetric('new_coverage', 'N/A')
-                    env.M_DUPLICATIONS = getMetric('new_duplicated_lines_density', '-')
-                    env.M_NEW_RELIABILITY_RATING = getMetric('new_reliability_rating', 'N/A')
-                    env.M_NEW_SECURITY_RATING = getMetric('new_security_rating', 'N/A')
-                    env.M_NEW_MAINTAINABILITY_RATING = getMetric('new_maintainability_rating', 'N/A')
                 }
             }
         }
@@ -255,39 +280,60 @@ pipeline {
 
             steps {
                 script {
-                    def commentBody = """### ${env.GATE_HEADER}
+                    withCredentials([string(credentialsId: 'GITLAB_TOKEN', variable: 'GITLAB_TOKEN')]) {
+                        sh '''
+                            set -eu
+
+                            docker run --rm \
+                                -e GITLAB_TOKEN="${GITLAB_TOKEN}" \
+                                -e GITLAB_API_URL="${GITLAB_API_URL}" \
+                                -e GITLAB_PROJECT_ID="${GITLAB_PROJECT_ID:-${CI_PROJECT_ID:-}}" \
+                                -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
+                                -e GATE_HEADER="${GATE_HEADER}" \
+                                -e M_NEW_ISSUES="${M_NEW_ISSUES}" \
+                                -e M_NEW_BUGS="${M_NEW_BUGS}" \
+                                -e M_NEW_VULNERABILITIES="${M_NEW_VULNERABILITIES}" \
+                                -e M_NEW_CODE_SMELLS="${M_NEW_CODE_SMELLS}" \
+                                -e M_COVERAGE="${M_COVERAGE}" \
+                                -e M_DUPLICATIONS="${M_DUPLICATIONS}" \
+                                -e M_SECURITY_HOTSPOTS="${M_SECURITY_HOTSPOTS}" \
+                                -e SONAR_ENTERPRISE_URL="${SONAR_ENTERPRISE_URL}" \
+                                -e PROJECT_KEY="${PROJECT_KEY}" \
+                                "${IMAGE_PYTHON}" \
+                                python3 -c "
+import os, urllib.request, json
+
+project_id = os.environ.get('GITLAB_PROJECT_ID')
+mr_iid = os.environ.get('GITLAB_MERGE_REQUEST_IID')
+gitlab_url = os.environ.get('GITLAB_API_URL')
+token = os.environ.get('GITLAB_TOKEN')
+
+comment_body = f'''### {os.environ.get('GATE_HEADER')}
 
 | Metric | Value |
 | :--- | :--- |
-| New Issues | ${env.M_NEW_ISSUES} |
-| New Bugs | ${env.M_NEW_BUGS} |
-| New Vulnerabilities | ${env.M_NEW_VULNERABILITIES} |
-| New Code Smells | ${env.M_NEW_CODE_SMELLS} |
-| Coverage | ${env.M_COVERAGE} |
-| Duplications | ${env.M_DUPLICATIONS} |
-| Security Hotspots | ${env.M_SECURITY_HOTSPOTS} |
+| New Issues | {os.environ.get('M_NEW_ISSUES')} |
+| New Bugs | {os.environ.get('M_NEW_BUGS')} |
+| New Vulnerabilities | {os.environ.get('M_NEW_VULNERABILITIES')} |
+| New Code Smells | {os.environ.get('M_NEW_CODE_SMELLS')} |
+| Coverage | {os.environ.get('M_COVERAGE')} |
+| Duplications | {os.environ.get('M_DUPLICATIONS')} |
+| Security Hotspots | {os.environ.get('M_SECURITY_HOTSPOTS')} |
 
-[View SonarQube analysis](${env.SONAR_ENTERPRISE_URL}/dashboard?id=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID})"""
+[View SonarQube analysis]({os.environ.get('SONAR_ENTERPRISE_URL')}/dashboard?id={os.environ.get('PROJECT_KEY')}&pullRequest={mr_iid})'''
 
-                    def payloadMap = [body: commentBody]
-                    // Corrección: Generar JSON con Groovy nativo (JsonOutput) sin usar writeJSON
-                    def payloadJson = groovy.json.JsonOutput.toJson(payloadMap)
+url = f'{gitlab_url}/projects/{project_id}/merge_requests/{mr_iid}/notes'
+headers = {
+    'PRIVATE-TOKEN': token,
+    'Content-Type': 'application/json'
+}
 
-                    withEnv(["PAYLOAD=${payloadJson}"]) {
-                        withCredentials([string(credentialsId: 'GITLAB_TOKEN', variable: 'GITLAB_TOKEN')]) {
-                            sh '''
-                                set -eu
-                                PROJECT_ID="${GITLAB_PROJECT_ID:-${CI_PROJECT_ID:-}}"
-                                test -n "${PROJECT_ID}" || { echo 'GitLab project ID is not available'; exit 1; }
-                                
-                                curl -fsS \
-                                    -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                                    -H "Content-Type: application/json" \
-                                    -X POST \
-                                    -d "${PAYLOAD}" \
-                                    "${GITLAB_API_URL}/projects/${PROJECT_ID}/merge_requests/${GITLAB_MERGE_REQUEST_IID}/notes"
-                            '''
-                        }
+data = json.dumps({'body': comment_body}).encode('utf-8')
+req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+with urllib.request.urlopen(req) as resp:
+    print('Comentario enviado correctamente a GitLab.')
+"
+                        '''
                     }
                 }
             }
