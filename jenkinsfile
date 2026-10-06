@@ -228,7 +228,7 @@ pipeline {
 
                     def getMetric = { key, fallback ->
                         def item = measures.find { it.metric == key }
-                        return item?.period?.value ?: item?.periods?[0]?.value ?: item?.value ?: fallback
+                        return item?.period?.value ?: item?.periods?.getAt(0)?.value ?: item?.value ?: fallback
                     }
 
                     env.M_NEW_ISSUES = getMetric('new_violations', '0')
