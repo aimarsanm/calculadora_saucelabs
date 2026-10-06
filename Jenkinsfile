@@ -1,0 +1,212 @@
+pipeline {
+    agent {
+        label "zuvmljenson02"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+    }
+
+    parameters {
+        hidden(
+            name: 'JOB_ACTION',
+            defaultValue: 'ci',
+            description: 'SonarQube Enterprise'
+        )
+    }
+
+    environment {
+        PROJECT_NAME = 'Pipeline Calculadora Prueba'
+        PROJECT_KEY = 'pipeline-calculadora-prueba'
+        PROJECT_VERSION = '1.0.0'
+        PYTHON_VERSION = '3.12'
+
+        IMAGE_PYTHON = 'registry.lksnext.com/devsecops/python3_12:1.2'
+        IMAGE_SONARSCANNER = 'registry.lksnext.com/devsecops/custom-sonarscanner-cli:1.0'
+
+        SONAR_ENTERPRISE_URL = 'https://sonarqubeenterprise.devops.lksnext.com/'
+        SONAR_TOKEN = credentials('sonarenterprise-analysis-token')
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "Reparando permisos del workspace..."
+
+                    docker run --rm \
+                        --user 0:0 \
+                        -v "${WORKSPACE}:/workspace" \
+                        -e HOST_UID="$(id -u)" \
+                        -e HOST_GID="$(id -g)" \
+                        "${IMAGE_PYTHON}" \
+                        sh -ceu '
+                            chown -R "${HOST_UID}:${HOST_GID}" /workspace
+                            chmod -R u+rwX /workspace
+                        '
+                '''
+
+                deleteDir()
+                
+                git(
+                    branch: 'main',
+                    url: 'https://gitlab.devops.lksnext.com/a8e16-oficina-tecnica-y-de-proyectos/devsecops/test-devops-area/pipeline-calculadora_prueba.git'
+                )
+            }
+        }
+
+        stage('Tests') {
+            when {
+                environment name: 'JOB_ACTION', value: 'ci'
+            }
+
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "Ejecutando tests de la calculadora en Docker..."
+
+                    docker run --rm \
+                        --user 0:0 \
+                        -v "${WORKSPACE}:/app" \
+                        -w /app \
+                        -e HOST_UID="$(id -u)" \
+                        -e HOST_GID="$(id -g)" \
+                        "${IMAGE_PYTHON}" \
+                        sh -ceu '
+                            python -m pip install --user pytest pytest-cov
+                            export PATH="$HOME/.local/bin:$PATH"
+
+                            python -m pytest \
+                                tests/ \
+                                -v \
+                                --tb=long \
+                                --maxfail=20 \
+                                --cov=src \
+                                --cov-report=xml:/app/coverage.xml \
+                                --junitxml=/app/junit-results.xml
+
+                            test -s /app/coverage.xml
+                            echo "Coverage generado correctamente."
+
+                            chown -R "${HOST_UID}:${HOST_GID}" /app
+                            chmod -R u+rwX /app
+                        '
+
+                    test -s "${WORKSPACE}/coverage.xml"
+                    echo "Coverage disponible en el workspace."
+                '''
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                environment name: 'JOB_ACTION', value: 'ci'
+            }
+
+            steps {
+                script {
+                    echo "Enviando análisis a SonarQube LKS..."
+
+                    sh '''
+                        set -eu
+
+                        test -s "${WORKSPACE}/coverage.xml"
+
+                        docker run --rm \
+                            --user 0:0 \
+                            --entrypoint /bin/sh \
+                            -v "${WORKSPACE}:/app" \
+                            -e SONAR_HOST_URL="${SONAR_ENTERPRISE_URL}" \
+                            -e SONAR_TOKEN="${SONAR_TOKEN}" \
+                            -e SONAR_USER_HOME=/tmp \
+                            -e PROJECT_KEY="${PROJECT_KEY}" \
+                            -e PROJECT_NAME="${PROJECT_NAME}" \
+                            -e PROJECT_VERSION="${PROJECT_VERSION}" \
+                            -e PYTHON_VERSION="${PYTHON_VERSION}" \
+                            sonarsource/sonar-scanner-cli:latest \
+                            -ceu '
+                                if command -v apk >/dev/null 2>&1; then
+                                    apk add --no-cache python3 py3-virtualenv npm
+                                elif command -v apt-get >/dev/null 2>&1; then
+                                    apt-get update
+                                    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                                        python3 python3-venv python3-pip virtualenv npm
+                                    rm -rf /var/lib/apt/lists/*
+                                elif command -v microdnf >/dev/null 2>&1; then
+                                    microdnf install -y python3 python3-pip python3-virtualenv npm
+                                    microdnf clean all
+                                elif command -v dnf >/dev/null 2>&1; then
+                                    dnf install -y python3 python3-pip python3-virtualenv npm
+                                    dnf clean all
+                                else
+                                    echo "ERROR: no compatible package manager in scanner image"
+                                    exit 1
+                                fi
+
+                                if command -v sonar-scanner >/dev/null 2>&1; then
+                                    SONAR_SCANNER=sonar-scanner
+                                elif [ -x /opt/sonar-scanner/bin/sonar-scanner ]; then
+                                    SONAR_SCANNER=/opt/sonar-scanner/bin/sonar-scanner
+                                else
+                                    SONAR_SCANNER=$(find /opt -type f -name sonar-scanner -perm -111 -print -quit 2>/dev/null)
+                                fi
+
+                                if [ -z "${SONAR_SCANNER}" ]; then
+                                    echo "ERROR: sonar-scanner executable not found"
+                                    exit 1
+                                fi
+
+                                "${SONAR_SCANNER}" \
+                                    -Dsonar.projectKey="${PROJECT_KEY}" \
+                                    -Dsonar.projectName="${PROJECT_NAME}" \
+                                    -Dsonar.projectVersion="${PROJECT_VERSION}" \
+                                    -Dsonar.projectBaseDir=/app \
+                                    -Dsonar.sources=/app/src \
+                                    -Dsonar.tests=/app/tests \
+                                    -Dsonar.python.version="${PYTHON_VERSION}" \
+                                    -Dsonar.python.coverage.reportPaths=/app/coverage.xml \
+                                    -Dsonar.exclusions="**/__pycache__/**" \
+                                    -Dsonar.scm.provider=git
+                            '
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh '''
+                set +e
+
+                docker run --rm \
+                    --user 0:0 \
+                    -v "${WORKSPACE}:/workspace" \
+                    -e HOST_UID="$(id -u)" \
+                    -e HOST_GID="$(id -g)" \
+                    "${IMAGE_PYTHON}" \
+                    sh -ceu '
+                        chown -R "${HOST_UID}:${HOST_GID}" /workspace
+                        chmod -R u+rwX /workspace
+                    '
+            '''
+
+            archiveArtifacts(
+                artifacts: 'coverage.xml,junit-results.xml',
+                allowEmptyArchive: true
+            )
+
+        }
+
+        success {
+            echo "Pipeline ejecutado exitosamente"
+        }
+
+        failure {
+            echo "Pipeline falló"
+        }
+    }
+}
