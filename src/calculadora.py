@@ -20,7 +20,12 @@ def calcular(numero1, numero2, operacion):
         case '//':
             # Operación división entera
             respuesta = numero1 // numero2
-
+        case '%':
+            # Operación módulo
+            respuesta = numero1 % numero2
+        case '√':
+            # Operación raíz cuadrada
+            respuesta = numero1 ** 0.5
 
         case _:
             raise ValueError("Operación inválida.")
