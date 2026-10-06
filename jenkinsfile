@@ -26,6 +26,7 @@ pipeline {
 
         SONAR_ENTERPRISE_URL = 'https://sonarqubeenterprise.devops.lksnext.com'
         GITLAB_API_URL = 'https://gitlab.devops.lksnext.com/api/v4'
+        GITLAB_PROJECT_PATH = 'a8e16-oficina-tecnica-y-de-proyectos/devsecops/test-devops-area/pipeline_calculadora_prueba'
         SONAR_TOKEN = credentials('sonarenterprise-analysis-token')
         
         GITLAB_MERGE_REQUEST_IID = "${env.gitlabMergeRequestIid ?: env.GITLAB_MERGE_REQUEST_IID ?: ''}"
@@ -283,6 +284,7 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
                                 -e GITLAB_TOKEN="${GITLAB_TOKEN}" \
                                 -e GITLAB_API_URL="${GITLAB_API_URL}" \
                                 -e GITLAB_PROJECT_ID="${GITLAB_PROJECT_ID:-${CI_PROJECT_ID:-}}" \
+                                -e GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH}" \
                                 -e GITLAB_MERGE_REQUEST_IID="${GITLAB_MERGE_REQUEST_IID}" \
                                 -e GATE_HEADER="${GATE_HEADER}" \
                                 -e M_NEW_ISSUES="${M_NEW_ISSUES}" \
@@ -296,11 +298,18 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
                                 -e PROJECT_KEY="${PROJECT_KEY}" \
                                 "${IMAGE_PYTHON}" \
                                 python3 -c "$(cat <<'PY'
-import os, urllib.request, json
+import os, urllib.error, urllib.request, json
+from urllib.parse import quote
 project_id = os.environ.get('GITLAB_PROJECT_ID')
+project_path = os.environ.get('GITLAB_PROJECT_PATH')
 mr_iid = os.environ.get('GITLAB_MERGE_REQUEST_IID')
 gitlab_url = os.environ.get('GITLAB_API_URL')
 token = os.environ.get('GITLAB_TOKEN')
+
+project_ref = project_id or project_path
+if not project_ref:
+    raise RuntimeError('No se ha configurado GITLAB_PROJECT_ID ni GITLAB_PROJECT_PATH')
+project_ref = quote(project_ref, safe='')
 
 comment_body = """### {gate_header}
 
@@ -328,12 +337,16 @@ comment_body = """### {gate_header}
     mr_iid=mr_iid
 )
 
-url = f'{gitlab_url}/projects/{project_id}/merge_requests/{mr_iid}/notes'
+url = f'{gitlab_url}/projects/{project_ref}/merge_requests/{mr_iid}/notes'
 headers = {'PRIVATE-TOKEN': token, 'Content-Type': 'application/json'}
 data = json.dumps({'body': comment_body}).encode('utf-8')
 req = urllib.request.Request(url, data=data, headers=headers, method='POST')
-with urllib.request.urlopen(req) as resp:
-    print('Comentario enviado correctamente a GitLab.')
+try:
+    with urllib.request.urlopen(req) as resp:
+        print('Comentario enviado correctamente a GitLab.')
+except urllib.error.HTTPError as error:
+    detail = error.read().decode('utf-8', errors='replace')
+    raise RuntimeError(f'GitLab API devolvió HTTP {error.code}: {detail[:500]}') from error
 PY
 )"
                         '''
