@@ -29,7 +29,6 @@ class TestCalcular(unittest.TestCase):
         valor_esperado = 5.0
         valor_actual = calcular(10, 2, '/')
         self.assertEqual(valor_esperado, valor_actual)
-    
 
     def test_operacion_invalida(self):
         with self.assertRaises(ValueError):
