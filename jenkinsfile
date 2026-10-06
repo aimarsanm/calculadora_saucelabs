@@ -188,6 +188,7 @@ pipeline {
                 }
             }
         }
+
         stage('Fetch Sonar MR Summary Metrics') {
             when {
                 expression { return env.GITLAB_MERGE_REQUEST_IID }
@@ -195,12 +196,12 @@ pipeline {
 
             steps {
                 script {
-                    // 1. Fetch Quality Gate Status
+                    // 1. Fetch Quality Gate Status usando comillas simples para ocultar el secreto
                     def qgRaw = sh(
-                        script: """
+                        script: '''
                             curl -fsS -u "${SONAR_TOKEN}:" \
                             "${SONAR_ENTERPRISE_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}&pullRequest=${GITLAB_MERGE_REQUEST_IID}"
-                        """,
+                        ''',
                         returnStdout: true
                     ).trim()
 
@@ -217,14 +218,15 @@ pipeline {
 
                     // 2. Fetch Detailed Metrics
                     def metricsRaw = sh(
-                        script: """
+                        script: '''
                             curl -fsS -u "${SONAR_TOKEN}:" \
                             "${SONAR_ENTERPRISE_URL}/api/measures/component?component=${PROJECT_KEY}&pullRequest=${GITLAB_MERGE_REQUEST_IID}&metricKeys=new_violations,new_bugs,new_reliability_rating,new_vulnerabilities,new_security_rating,new_code_smells,new_maintainability_rating,new_coverage,new_duplicated_lines_density,new_security_hotspots"
-                        """,
+                        ''',
                         returnStdout: true
                     ).trim()
 
-                    def metricsJson = readJSON text: metricsRaw
+                    // Corrección: Usar JsonSlurperClassic en lugar de readJSON
+                    def metricsJson = new groovy.json.JsonSlurperClassic().parseText(metricsRaw)
                     def measures = metricsJson?.component?.measures ?: []
 
                     def getMetric = { key, fallback ->
@@ -268,7 +270,8 @@ pipeline {
 [View SonarQube analysis](${env.SONAR_ENTERPRISE_URL}/dashboard?id=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID})"""
 
                     def payloadMap = [body: commentBody]
-                    def payloadJson = writeJSON json: payloadMap, returnText: true
+                    // Corrección: Generar JSON con Groovy nativo (JsonOutput) sin usar writeJSON
+                    def payloadJson = groovy.json.JsonOutput.toJson(payloadMap)
 
                     withEnv(["PAYLOAD=${payloadJson}"]) {
                         withCredentials([string(credentialsId: 'GITLAB_TOKEN', variable: 'GITLAB_TOKEN')]) {
@@ -283,7 +286,7 @@ pipeline {
                                     -X POST \
                                     -d "${PAYLOAD}" \
                                     "${GITLAB_API_URL}/projects/${PROJECT_ID}/merge_requests/${GITLAB_MERGE_REQUEST_IID}/notes"
-                                        '''
+                            '''
                         }
                     }
                 }
@@ -312,7 +315,6 @@ pipeline {
                 artifacts: 'coverage.xml,junit-results.xml',
                 allowEmptyArchive: true
             )
-
         }
 
         success {
