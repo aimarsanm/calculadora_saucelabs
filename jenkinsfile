@@ -295,7 +295,7 @@ mr_iid = os.environ.get('GITLAB_MERGE_REQUEST_IID')
 gitlab_url = os.environ.get('GITLAB_API_URL')
 token = os.environ.get('GITLAB_TOKEN')
 
-comment_body = '''### {gate_header}
+comment_body = """### {gate_header}
 
 | Metric | Value |
 | :--- | :--- |
@@ -307,7 +307,7 @@ comment_body = '''### {gate_header}
 | Duplications | {dups} |
 | Security Hotspots | {hotspots} |
 
-[View SonarQube analysis]({sonar_url}/dashboard?id={project_key}&pullRequest={mr_iid})'''.format(
+[View SonarQube analysis]({sonar_url}/dashboard?id={project_key}&pullRequest={mr_iid})""".format(
     gate_header=os.environ.get('GATE_HEADER'),
     issues=os.environ.get('M_NEW_ISSUES'),
     bugs=os.environ.get('M_NEW_BUGS'),
