@@ -17,7 +17,13 @@ def calcular(numero1, numero2, operacion):
         case '**':
             # Operación potencia
             respuesta = numero1 ** numero2
-        
+        case '//':
+            # Operación división entera
+            respuesta = numero1 // numero2
+        case '%':
+            # Operación módulo
+            respuesta = numero1 % numero2
+
         case _:
             raise ValueError("Operación inválida.")
 
@@ -29,8 +35,8 @@ if __name__ == '__main__':
     numero1 = int(input())
     print("Ingrese el número 2")
     numero2 = int(input())
-    
-    print("Ingrese la operación (+, -, *, /, **, //)")
+    print("Ingrese la operación que desea realizar:")
+    print("Ingrese la operación (+, -, *, /, **, //, %)")
     operacion = input()
 
     resultado = calcular(numero1, numero2, operacion)
