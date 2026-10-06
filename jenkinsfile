@@ -24,7 +24,8 @@ pipeline {
         IMAGE_PYTHON = 'registry.lksnext.com/devsecops/python3_12:1.2'
         IMAGE_SONARSCANNER = 'sonarsource/sonar-scanner-cli:latest'
 
-        SONAR_ENTERPRISE_URL = 'https://sonarqubeenterprise.devops.lksnext.com/'
+        SONAR_ENTERPRISE_URL = 'https://sonarqubeenterprise.devops.lksnext.com'
+        GITLAB_API_URL = 'https://gitlab.devops.lksnext.com/api/v4'
         SONAR_TOKEN = credentials('sonarenterprise-analysis-token')
     }
 
@@ -177,6 +178,101 @@ pipeline {
                                     ${SONAR_PR_ARGS}
                             '
                     '''
+                }
+            }
+        }
+        stage('Fetch Sonar MR Summary Metrics') {
+            when {
+                expression { return env.GITLAB_MERGE_REQUEST_IID }
+            }
+
+            steps {
+                script {
+                    def qgResp = sh(
+                        script: """
+                            curl -fsS -u "${env.SONAR_TOKEN}:" \\
+                            "${env.SONAR_ENTERPRISE_URL}/api/qualitygates/project_status?projectKey=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID}"
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    def status = sh(
+                        script: "printf '%s' '${qgResp}' | jq -r '.projectStatus.status // \"UNKNOWN\"'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (status == 'OK') {
+                        env.GATE_HEADER = 'Quality Gate passed'
+                    } else if (status == 'WARN') {
+                        env.GATE_HEADER = 'Quality Gate passed with warnings'
+                    } else {
+                        env.GATE_HEADER = 'Quality Gate failed'
+                    }
+
+                    def metricsResp = sh(
+                        script: """
+                            curl -fsS -u "${env.SONAR_TOKEN}:" \\
+                            "${env.SONAR_ENTERPRISE_URL}/api/measures/component?component=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID}&metricKeys=new_violations,new_bugs,new_reliability_rating,new_vulnerabilities,new_security_rating,new_code_smells,new_maintainability_rating,new_coverage,new_duplicated_lines_density,new_security_hotspots"
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    def metric = { key, fallback ->
+                        sh(
+                            script: "printf '%s' '${metricsResp}' | jq -r '.component.measures[]? | select(.metric==\"${key}\") | (.period.value // .periods[0].value // .value // \"${fallback}\")'",
+                            returnStdout: true
+                        ).trim()
+                    }
+
+                    env.M_NEW_ISSUES = metric('new_violations', '0')
+                    env.M_NEW_BUGS = metric('new_bugs', '0')
+                    env.M_NEW_VULNERABILITIES = metric('new_vulnerabilities', '0')
+                    env.M_NEW_CODE_SMELLS = metric('new_code_smells', '0')
+                    env.M_SECURITY_HOTSPOTS = metric('new_security_hotspots', '0')
+                    env.M_COVERAGE = metric('new_coverage', 'N/A')
+                    env.M_DUPLICATIONS = metric('new_duplicated_lines_density', '-')
+                    env.M_NEW_RELIABILITY_RATING = metric('new_reliability_rating', 'N/A')
+                    env.M_NEW_SECURITY_RATING = metric('new_security_rating', 'N/A')
+                    env.M_NEW_MAINTAINABILITY_RATING = metric('new_maintainability_rating', 'N/A')
+                }
+            }
+        }
+
+        stage('Comment MR') {
+            when {
+                expression { return env.GITLAB_MERGE_REQUEST_IID }
+            }
+
+            steps {
+                script {
+                    def commentBody = """### ${env.GATE_HEADER}
+
+| Metric | Value |
+| :--- | :--- |
+| New Issues | ${env.M_NEW_ISSUES} |
+| New Bugs | ${env.M_NEW_BUGS} |
+| New Vulnerabilities | ${env.M_NEW_VULNERABILITIES} |
+| New Code Smells | ${env.M_NEW_CODE_SMELLS} |
+| Coverage | ${env.M_COVERAGE} |
+| Duplications | ${env.M_DUPLICATIONS} |
+| Security Hotspots | ${env.M_SECURITY_HOTSPOTS} |
+
+[View SonarQube analysis](${env.SONAR_ENTERPRISE_URL}/dashboard?id=${env.PROJECT_KEY}&pullRequest=${env.GITLAB_MERGE_REQUEST_IID})"""
+
+                    withCredentials([string(credentialsId: 'GITLAB_TOKEN', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            set -eu
+                            PROJECT_ID=\"\${GITLAB_PROJECT_ID:-\${CI_PROJECT_ID:-}}\"
+                            test -n \"\${PROJECT_ID}\" || { echo 'GitLab project ID is not available'; exit 1; }
+                            PAYLOAD=\$(jq -n --arg body \"${commentBody}\" '{body: \\$body}')
+                            curl -fsS \\
+                                -H \"PRIVATE-TOKEN: \${GITLAB_TOKEN}\" \\
+                                -H \"Content-Type: application/json\" \\
+                                -X POST \\
+                                -d \"\$PAYLOAD\" \\
+                                \"${env.GITLAB_API_URL}/projects/\${PROJECT_ID}/merge_requests/${env.GITLAB_MERGE_REQUEST_IID}/notes\"
+                        """
+                    }
                 }
             }
         }
