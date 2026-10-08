@@ -276,12 +276,12 @@ with open('/workspace/sonar_metrics.env', 'w') as f:
 
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'GITLAB_TOKEN', variable: 'GITLAB_TOKEN')]) {
+                    withCredentials([string(credentialsId: 'GITLAB_DEVOPS_TOKEN', variable: 'GITLAB_DEVOPS_TOKEN')]) {
                         sh '''
                             set -eu
 
                             docker run --rm \
-                                -e GITLAB_TOKEN="${GITLAB_TOKEN}" \
+                                -e GITLAB_DEVOPS_TOKEN="${GITLAB_DEVOPS_TOKEN}" \
                                 -e GITLAB_API_URL="${GITLAB_API_URL}" \
                                 -e GITLAB_PROJECT_ID="${GITLAB_PROJECT_ID:-${CI_PROJECT_ID:-}}" \
                                 -e GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH}" \
