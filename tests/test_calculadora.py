@@ -34,5 +34,13 @@ class TestCalcular(unittest.TestCase):
         with self.assertRaises(ValueError):
             calcular(10, 5, 'x')
 
+    def test_raizcuadrada(self):
+        valor_esperado = 4
+        valor_actual = calcular(16, 0, '√')
+        self.assertEqual(valor_esperado, valor_actual)
+    def test_raizcuadrada_invalida(self):
+        with self.assertRaises(ValueError):
+            calcular(-16, 0, '√')
+
 if __name__ == '__main__':
     unittest.main()

@@ -32,6 +32,19 @@ def calcular(numero1, numero2, operacion):
         case '√3':
             # Operación raíz cúbica
             respuesta = numero1 ** (1/3)
+        case 'cbrt':
+            # Operación raíz cúbica alternativa
+            respuesta = numero1 ** (1/3)
+        case 'abs':
+            # Operación valor absoluto
+            respuesta = abs(numero1)
+        case 'neg':
+            # Operación negación
+            respuesta = -numero1
+        case 'ln':
+            # Operación logaritmo natural
+            import math
+            respuesta = math.log(numero1)
         case _:
             raise ValueError("Operación inválida.")
 
