@@ -2,30 +2,45 @@ import os
 import unittest
 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 URL_FRONTEND = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 TIMEOUT_SEGUNDOS = 5
+SAUCE_URL = 'https://ondemand.eu-central-1.saucelabs.com:443/wd/hub'
 
 
 class TestFrontendCalculadora(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        opciones = Options()
-        opciones.add_argument('--headless=new')
-        opciones.add_argument('--window-size=1280,900')
-        cls.driver = webdriver.Chrome(options=opciones)
-        cls.espera = WebDriverWait(cls.driver, TIMEOUT_SEGUNDOS)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.driver.quit()
+    def run(self, resultado=None):
+        resultado = super().run(resultado)
+        fallido = any(caso is self for caso, _ in resultado.failures + resultado.errors)
+        if getattr(self, 'driver', None) is not None:
+            self.driver.execute_script(f"sauce:job-result={'failed' if fallido else 'passed'}")
+            self.driver.quit()
+        return resultado
 
     def setUp(self):
+        usuario = os.environ.get('SAUCE_USERNAME')
+        clave = os.environ.get('SAUCE_ACCESS_KEY')
+        if not usuario or not clave:
+            self.fail('Define las variables de entorno SAUCE_USERNAME y SAUCE_ACCESS_KEY.')
+
+        opciones = ChromeOptions()
+        opciones.browser_version = 'latest'
+        opciones.platform_name = 'Windows 11'
+        opciones.set_capability('sauce:options', {
+            'username': usuario,
+            'accessKey': clave,
+            'build': 'calculadora-frontend',
+            'name': self.id(),
+            'tunnelName': 'mi-tunel-local',
+        })
+        self.driver = webdriver.Remote(command_executor=SAUCE_URL, options=opciones)
+        self.espera = WebDriverWait(self.driver, TIMEOUT_SEGUNDOS)
+
         self.driver.get(URL_FRONTEND)
         self.espera.until(EC.presence_of_element_located((By.ID, 'calcular')))
 
