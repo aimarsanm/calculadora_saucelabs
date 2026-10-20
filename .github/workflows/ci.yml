@@ -24,4 +24,4 @@ jobs:
 
   call-reusable:
     needs: build
-    uses: aimarsanm/pipelines_reusable/.github/workflows/blank.yml@main
+    uses: aimarsanm/pipelines_reusables/.github/workflows/blank.yml@main
