@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-URL_FRONTEND = os.environ.get('FRONTEND_URL', 'http://127.0.0.1:5173')
+URL_FRONTEND = os.environ.get('FRONTEND_URL', 'http://192.168.68.106:5173')
 TIMEOUT_SEGUNDOS = 5
 SAUCE_URL = 'https://ondemand.eu-central-1.saucelabs.com:443/wd/hub'
 
