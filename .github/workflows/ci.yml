@@ -1,4 +1,4 @@
-name: reusable
+name: ci
 
 # Controls when the workflow will run
 on:
@@ -33,4 +33,7 @@ jobs:
           echo Add other actions to build,
           echo test, and deploy your project.
           
-      - uses: aimarsanm/pipelines_reusable/.github/workflows/blank.yml@main
+  call-reusable:
+    needs: build # Opcional: para que se ejecute después del job de arriba
+    uses: aimarsanm/pipelines_reusable/.github/workflows/blank.yml@main        
+      
